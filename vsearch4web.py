@@ -1,8 +1,8 @@
 import pprint
-
 from time import sleep
+from threading import Thread
 
-from DB_context_mgr import UseDatabase, ConnectionError
+from DB_context_mgr import UseDatabase, DBConnectionError, SQLError
 from flask import Flask, render_template, request, redirect, escape, session
 from vsearchmodule import search_for_chars
 from checker import check_logged_in
@@ -87,8 +87,12 @@ def do_search() -> str:
     results = str(search_for_chars(phrase, chars))
     try:
         log_request(request, results)
+    except DBConnectionError as err:
+        print('Logging failed with a database connection error: ', str(err))
+    except SQLError as err:
+        print('Logging failed with SQL syntax error: ', str(err))
     except Exception as err:
-        print('***** Logging failed with this error: ', str(err))
+        print('Logging failed with the following error: ', str(err))
     return render_template('results.html',
         the_title='Here are your results...',
         the_phrase = phrase,
@@ -148,13 +152,15 @@ def hf_view_log_db() -> 'html':
             # method returns a list of tuples, which is what render_template wants.
             contents = cursor.fetchall()
 
-    except ConnectionError as err:
+    except DBConnectionError as err:
         print('Database connection error: ', str(err))
+        return 'Error'
+    except SQLError as err:
+        print('SQL error:', str(err))
         return 'Error'
     except Exception as err:
         print('Something went wrong: ', str(err))
         return 'Error'
-
 
     titles = ('Request Number', 'Timestamp', 'Phrase','Letters',
               'Remote Address', 'User Agent', 'Results')
