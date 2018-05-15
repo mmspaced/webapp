@@ -3,7 +3,7 @@ from time import sleep
 from threading import Thread
 
 from DB_context_mgr import UseDatabase, DBConnectionError, SQLError
-from flask import Flask, render_template, request, redirect, escape, session
+from flask import Flask, render_template, request, redirect, escape, session, copy_current_request_context
 from vsearchmodule import search_for_chars
 from checker import check_logged_in
 
@@ -29,33 +29,7 @@ app.config['logdbconfig'] = {'host': '127.0.0.1',
 
 app.secret_key = 'YouWillNeverGuess'
 
-def log_request(req: 'flask_request', res: str) -> None:
 
-    # conn = psycopg2.connect(**logdbconfig)
-    # cursor = conn.cursor()
-
-    with UseDatabase(app.config['logdbconfig']) as cursor:
-
-        _SQL = """INSERT INTO log
-                    (phrase, letters, ip, browser_string, results) 
-                    VALUES(%s, %s, %s, %s, %s)"""
-
-        cursor.execute(_SQL, (req.form['phrase'],
-                              req.form['chars'],
-                              req.remote_addr,
-                              req.user_agent.browser,
-                              res, ))
-    # conn.commit()
-    # cursor.close()
-    # conn.close()
-
-    # global record_num
-
-    # As mentioned above, don't use global variables in a web app.
-    # record_num += 1
-
-    # with open('vsearch.log', 'a') as log:
-        # print(record_num, req.form, req.remote_addr, req.user_agent, res, file=log, sep=' | ')
 
 # @app.route('/')
 # def hello() -> '302':
@@ -82,22 +56,77 @@ def do_logout() -> str:
 
 @app.route('/search4', methods=['POST'])
 def do_search() -> str:
+
+    # In order to use copy_current_request_context decorator, the function
+    # being decorated (log_request) has to be defined within the function
+    # that calls it.  Therefore, we had to move as an inner function
+
+    @copy_current_request_context
+    def log_request(req: 'flask_request', res: str) -> None:
+
+        # conn = psycopg2.connect(**logdbconfig)
+        # cursor = conn.cursor()
+
+        # Introduce a 15 second delay to test threading.
+        sleep(15)
+
+        try:
+
+            with UseDatabase(app.config['logdbconfig']) as cursor:
+
+                _SQL = """INSERT INTO log 
+                            (phrase, letters, ip, browser_string, results) 
+                             VALUES(%s, %s, %s, %s, %s)"""
+
+                cursor.execute(_SQL, (req.form['phrase'],
+                                      req.form['chars'],
+                                      req.remote_addr,
+                                      req.user_agent.browser,
+                                      results))
+
+        except DBConnectionError as err:
+            print('Logging failed with a database connection error: ', str(err))
+        except SQLError as err:
+            print('Logging failed with SQL syntax error: ', str(err))
+        except Exception as err:
+            print('Logging failed with the following error: ', str(err))
+
+        # conn.commit()
+        # cursor.close()
+        # conn.close()
+
+        # global record_num
+
+        # As mentioned above, don't use global variables in a web app.
+        # record_num += 1
+
+        # with open('vsearch.log', 'a') as log:
+        # print(record_num, req.form, req.remote_addr, req.user_agent, res, file=log, sep=' | ')
+
     phrase = request.form['phrase']
     chars = request.form['chars']
     results = str(search_for_chars(phrase, chars))
     try:
-        log_request(request, results)
-    except DBConnectionError as err:
-        print('Logging failed with a database connection error: ', str(err))
-    except SQLError as err:
-        print('Logging failed with SQL syntax error: ', str(err))
+        # Execute log_request to the database on a separate thread
+        t = Thread(target=log_request, args=(request, results))
+        t.start()
+
+        # log_request now gets invoked as a separate thread
+        # log_request(request, results)
+
+    # Catching these exceptions no longer makes sense because do_search will
+    # before the log_request thread completes.
+
+    # except DBConnectionError as err:
+        # print('Logging failed with a database connection error: ', str(err))
+    # except SQLError as err:
+        # print('Logging failed with SQL syntax error: ', str(err))
+
     except Exception as err:
-        print('Logging failed with the following error: ', str(err))
-    return render_template('results.html',
-        the_title='Here are your results...',
-        the_phrase = phrase,
-        the_chars = chars,
-        the_results = results)
+        print('Thread initiation failed with the following error: ', str(err))
+        return 'Error'
+
+    return render_template('results.html', the_title='Here are your results...', the_phrase = phrase, the_chars = chars, the_results = results)
 
 @app.route('/viewlog')
 @check_logged_in
