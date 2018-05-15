@@ -115,7 +115,7 @@ def do_search() -> str:
         # log_request(request, results)
 
     # Catching these exceptions no longer makes sense because do_search will
-    # before the log_request thread completes.
+    # complete before the log_request thread completes.
 
     # except DBConnectionError as err:
         # print('Logging failed with a database connection error: ', str(err))
