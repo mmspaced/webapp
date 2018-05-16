@@ -68,7 +68,7 @@ def do_search() -> str:
         # cursor = conn.cursor()
 
         # Introduce a 15 second delay to test threading.
-        sleep(15)
+        # sleep(15)
 
         try:
 
@@ -111,7 +111,7 @@ def do_search() -> str:
         t = Thread(target=log_request, args=(request, results))
         t.start()
 
-        # log_request now gets invoked as a separate thread
+        # log_request gets called in a separate thread, so comment out here
         # log_request(request, results)
 
     # Catching these exceptions no longer makes sense because do_search will
